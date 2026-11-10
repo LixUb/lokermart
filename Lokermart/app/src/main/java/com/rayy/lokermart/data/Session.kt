@@ -56,7 +56,7 @@ suspend fun <T> apiCall(block: suspend () -> T): Result<T> = try {
     }
     Result.failure(Exception(message ?: "Terjadi kesalahan (${e.code()})"))
 } catch (e: IOException) {
-    Result.failure(Exception("Tidak dapat terhubung ke server. Periksa koneksi dan alamat server."))
+    Result.failure(Exception("Tidak dapat terhubung ke server. Periksa koneksi dan alamat server.\n(${e.javaClass.simpleName}: ${e.message})"))
 } catch (e: Exception) {
     Result.failure(Exception(e.message ?: "Terjadi kesalahan tak terduga"))
 }
