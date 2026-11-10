@@ -55,7 +55,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.rayy.lokermart.data.Network
 import com.rayy.lokermart.data.Product
 import com.rayy.lokermart.data.apiCall
 import com.rayy.lokermart.ui.Tone
@@ -65,7 +64,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import okhttp3.Request
 
 // ---------------------------------------------------------------- Pemuat data
 
@@ -266,12 +264,13 @@ fun DropdownField(
 private val imageCache = object : LruCache<String, Bitmap>(24) {}
 
 private fun downloadBitmap(url: String): Bitmap? = try {
-    val request = Request.Builder().url(url).build()
-    Network.http.newCall(request).execute().use { response ->
-        val bytes = if (response.isSuccessful) response.body?.bytes() else null
-        if (bytes == null) {
-            null
-        } else {
+    // HttpURLConnection dipakai (bukan OkHttp) agar tidak bergantung pada versi OkHttp
+    val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+    conn.connectTimeout = 10_000
+    conn.readTimeout = 15_000
+    try {
+        if (conn.responseCode in 200..299) {
+            val bytes = conn.inputStream.use { it.readBytes() }
             // Perkecil saat decode agar hemat memori
             val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
@@ -279,7 +278,11 @@ private fun downloadBitmap(url: String): Bitmap? = try {
             while (bounds.outWidth / (sample * 2) >= 800 && bounds.outHeight / (sample * 2) >= 800) sample *= 2
             val opts = BitmapFactory.Options().apply { inSampleSize = sample }
             BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
+        } else {
+            null
         }
+    } finally {
+        conn.disconnect()
     }
 } catch (_: Exception) {
     null
