@@ -1,146 +1,214 @@
 package com.rayy.lokermart.ui
 
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.AddCircle
+import androidx.compose.material.icons.filled.ChatBubble
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Receipt
+import androidx.compose.material.icons.outlined.AddCircleOutline
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.PersonOutline
+import androidx.compose.material.icons.outlined.Receipt
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.unit.dp
-import androidx.navigation.NavController
-import androidx.navigation.compose.*
-import com.rayy.lokermart.data.*
-import kotlinx.coroutines.launch
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.navigation.NavType
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
+import com.rayy.lokermart.data.Network
+import com.rayy.lokermart.data.Session
+import com.rayy.lokermart.data.apiCall
+import com.rayy.lokermart.ui.components.ErrorBox
+import com.rayy.lokermart.ui.components.LoadingBox
+import com.rayy.lokermart.ui.screens.AdminScreen
+import com.rayy.lokermart.ui.screens.AuthScreen
+import com.rayy.lokermart.ui.screens.CheckoutScreen
+import com.rayy.lokermart.ui.screens.ChatListScreen
+import com.rayy.lokermart.ui.screens.ChatRoomScreen
+import com.rayy.lokermart.ui.screens.HomeScreen
+import com.rayy.lokermart.ui.screens.MyDisputesScreen
+import com.rayy.lokermart.ui.screens.MyProductsScreen
+import com.rayy.lokermart.ui.screens.OrderDetailScreen
+import com.rayy.lokermart.ui.screens.OrdersScreen
+import com.rayy.lokermart.ui.screens.ProductDetailScreen
+import com.rayy.lokermart.ui.screens.ProductFormScreen
+import com.rayy.lokermart.ui.screens.ProfileScreen
 
-private val Teal = Color(0xFF0F766E)
+object Route {
+    const val HOME = "home"
+    const val SELL = "sell"
+    const val CHATS = "chats"
+    const val ORDERS = "orders"
+    const val PROFILE = "profile"
+
+    const val PRODUCT = "product/{id}"
+    const val PRODUCT_FORM = "product_form?id={id}"
+    const val CHAT = "chat/{pid}/{other}"
+    const val CHECKOUT = "checkout/{pid}?offerId={offerId}&amount={amount}"
+    const val ORDER = "order/{id}"
+    const val DISPUTES = "disputes"
+    const val ADMIN = "admin"
+
+    fun product(id: Int) = "product/$id"
+    fun productForm(id: Int? = null) = if (id == null) "product_form" else "product_form?id=$id"
+    fun chat(pid: Int, other: Int) = "chat/$pid/$other"
+    fun checkout(pid: Int, offerId: Int? = null, amount: Long? = null) =
+        if (offerId == null || amount == null) "checkout/$pid" else "checkout/$pid?offerId=$offerId&amount=$amount"
+    fun order(id: Int) = "order/$id"
+}
 
 @Composable
 fun App() {
-    val nav = rememberNavController()
-    NavHost(nav, "login") {
-        composable("login") { LoginScreen { nav.navigate("home") { popUpTo("login") { inclusive = true } } } }
-        composable("home") { HomeScreen(nav) }
-        composable("product/{id}") { PurchaseScreen(it.arguments!!.getString("id")!!.toInt()) }
-        composable("orders") { OrdersScreen() }
+    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        val user = Session.user
+        if (user != null) {
+            MainApp()
+        } else if (Session.token == null) {
+            AuthScreen()
+        } else {
+            BootScreen()
+        }
     }
 }
 
+/** Ada token tersimpan tapi data pengguna belum dimuat: ambil dari server. */
 @Composable
-fun LoginScreen(onDone: () -> Unit) {
-    var name by remember { mutableStateOf("") }
-    var email by remember { mutableStateOf("") }
-    var pass by remember { mutableStateOf("") }
-    var register by remember { mutableStateOf(false) }
+private fun BootScreen() {
+    var attempt by remember { mutableIntStateOf(0) }
     var error by remember { mutableStateOf<String?>(null) }
-    val scope = rememberCoroutineScope()
-    Column(Modifier.fillMaxSize().padding(24.dp), Arrangement.Center, Alignment.CenterHorizontally) {
-        Text("LockerMarket", style = MaterialTheme.typography.headlineLarge, color = Teal)
-        Text("Buy & sell second-hand, safely.", Modifier.padding(bottom = 24.dp))
-        if (register) OutlinedTextField(name, { name = it }, label = { Text("Name") }, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(email, { email = it }, label = { Text("Email") }, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(pass, { pass = it }, label = { Text("Password") },
-            visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
-        error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-        Button({
-            scope.launch {
-                runCatching {
-                    val c = Credentials(name.takeIf { register }, email, pass)
-                    if (register) Network.api.register(c) else Network.api.login(c)
-                }.onSuccess { Network.token = it.token; onDone() }
-                    .onFailure { error = "Check your details and try again" }
-            }
-        }, Modifier.fillMaxWidth().padding(top = 16.dp)) { Text(if (register) "Create account" else "Log in") }
-        TextButton({ register = !register }) { Text(if (register) "Have an account? Log in" else "New here? Register") }
-    }
-}
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun HomeScreen(nav: NavController) {
-    var query by remember { mutableStateOf("") }
-    var items by remember { mutableStateOf(listOf<Product>()) }
-    LaunchedEffect(query) { items = runCatching { Network.api.products(query.ifBlank { null }) }.getOrDefault(emptyList()) }
-    Scaffold(topBar = {
-        TopAppBar(title = { Text("Browse") }, actions = {
-            IconButton({ nav.navigate("orders") }) { Icon(Icons.Default.ShoppingCart, "Orders") }
-        })
-    }) { pad ->
-        Column(Modifier.padding(pad).padding(16.dp)) {
-            OutlinedTextField(query, { query = it }, placeholder = { Text("Search items") },
-                leadingIcon = { Icon(Icons.Default.Search, null) }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(top = 12.dp)) {
-                items(items) { p ->
-                    Card(onClick = { nav.navigate("product/${p.id}") }, Modifier.fillMaxWidth()) {
-                        Column(Modifier.padding(16.dp)) {
-                            Text(p.title, style = MaterialTheme.typography.titleMedium)
-                            Text("Rp ${p.price}", color = Teal, style = MaterialTheme.typography.titleLarge)
-                            Text("${p.condition ?: ""} · ${p.seller_name ?: ""}", style = MaterialTheme.typography.bodySmall)
-                        }
-                    }
-                }
-            }
+    LaunchedEffect(attempt) {
+        error = null
+        apiCall { Network.api.me() }
+            .onSuccess { Session.user = it }
+            .onFailure { error = it.message ?: "Gagal memuat akun" }
+    }
+
+    val message = error
+    if (message == null) {
+        LoadingBox()
+    } else {
+        Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+            ErrorBox(message, onRetry = { attempt++ })
+            TextButton(onClick = { Session.logout() }) { Text("Keluar") }
         }
     }
 }
 
-// Pick a locker -> create order -> pay -> receive one-time pickup code.
-@Composable
-fun PurchaseScreen(productId: Int) {
-    var lockers by remember { mutableStateOf(listOf<Locker>()) }
-    var code by remember { mutableStateOf<String?>(null) }
-    val scope = rememberCoroutineScope()
-    LaunchedEffect(Unit) { lockers = runCatching { Network.api.lockers() }.getOrDefault(emptyList()) }
-    Column(Modifier.padding(16.dp)) {
-        Text("Choose a pickup locker", style = MaterialTheme.typography.titleLarge)
-        if (code != null) {
-            Text("Your pickup code", Modifier.padding(top = 24.dp))
-            Text(code!!, style = MaterialTheme.typography.displayMedium, color = Teal)
-            Text("Shown once. The seller will now place the item in the locker.")
-        } else lockers.forEach { l ->
-            ListItem(
-                headlineContent = { Text(l.name) },
-                supportingContent = { Text("${l.address} · ${l.free_slots} free") },
-                trailingContent = {
-                    Button({
-                        scope.launch {
-                            runCatching {
-                                val o = Network.api.createOrder(OrderIn(productId, l.id, 0.0))
-                                Network.api.pay(o.id).pickup_code
-                            }.onSuccess { code = it }
-                        }
-                    }) { Text("Pay") }
-                })
-        }
-    }
-}
+private class TabItem(val route: String, val label: String, val icon: ImageVector, val selectedIcon: ImageVector)
+
+private val Tabs = listOf(
+    TabItem(Route.HOME, "Beranda", Icons.Outlined.Home, Icons.Filled.Home),
+    TabItem(Route.SELL, "Jual", Icons.Outlined.AddCircleOutline, Icons.Filled.AddCircle),
+    TabItem(Route.CHATS, "Chat", Icons.Outlined.ChatBubbleOutline, Icons.Filled.ChatBubble),
+    TabItem(Route.ORDERS, "Pesanan", Icons.Outlined.Receipt, Icons.Filled.Receipt),
+    TabItem(Route.PROFILE, "Akun", Icons.Outlined.PersonOutline, Icons.Filled.Person),
+)
 
 @Composable
-fun OrdersScreen() {
-    var orders by remember { mutableStateOf(listOf<Order>()) }
-    var entry by remember { mutableStateOf("") }
-    val scope = rememberCoroutineScope()
-    LaunchedEffect(Unit) { orders = runCatching { Network.api.orders() }.getOrDefault(emptyList()) }
-    LazyColumn(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        items(orders) { o ->
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp)) {
-                    Text(o.title ?: "Order #${o.id}", style = MaterialTheme.typography.titleMedium)
-                    AssistChip({}, label = { Text(o.status.replace('_', ' ')) })
-                    if (o.status == "deposited") {
-                        OutlinedTextField(entry, { entry = it.take(6) }, label = { Text("Enter 6-digit code") })
-                        Button({ scope.launch { runCatching { Network.api.retrieve(o.id, CodeIn(entry)) } } }) { Text("Open locker") }
-                    }
-                    if (o.status == "picked_up") Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button({ scope.launch { runCatching { Network.api.confirm(o.id) } } }) { Text("All good") }
-                        OutlinedButton({ scope.launch { runCatching { Network.api.dispute(o.id, DisputeIn("Item not as described")) } } }) { Text("Report problem") }
+private fun MainApp() {
+    val nav = rememberNavController()
+    val backStack by nav.currentBackStackEntryAsState()
+    val current = backStack?.destination?.route
+
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
+        bottomBar = {
+            if (Tabs.any { it.route == current }) {
+                NavigationBar {
+                    Tabs.forEach { tab ->
+                        val selected = current == tab.route
+                        NavigationBarItem(
+                            selected = selected,
+                            onClick = {
+                                nav.navigate(tab.route) {
+                                    popUpTo(Route.HOME) { saveState = true }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                            },
+                            icon = { Icon(if (selected) tab.selectedIcon else tab.icon, contentDescription = tab.label) },
+                            label = { Text(tab.label) },
+                        )
                     }
                 }
             }
+        },
+    ) { padding ->
+        NavHost(
+            navController = nav,
+            startDestination = Route.HOME,
+            modifier = Modifier.padding(padding).consumeWindowInsets(padding),
+        ) {
+            composable(Route.HOME) { HomeScreen(nav) }
+            composable(Route.SELL) { MyProductsScreen(nav) }
+            composable(Route.CHATS) { ChatListScreen(nav) }
+            composable(Route.ORDERS) { OrdersScreen(nav) }
+            composable(Route.PROFILE) { ProfileScreen(nav) }
+
+            composable(Route.PRODUCT, listOf(navArgument("id") { type = NavType.IntType })) {
+                ProductDetailScreen(nav, it.arguments?.getInt("id") ?: 0)
+            }
+            composable(
+                Route.PRODUCT_FORM,
+                listOf(navArgument("id") { type = NavType.IntType; defaultValue = -1 }),
+            ) {
+                ProductFormScreen(nav, it.arguments?.getInt("id") ?: -1)
+            }
+            composable(
+                Route.CHAT,
+                listOf(
+                    navArgument("pid") { type = NavType.IntType },
+                    navArgument("other") { type = NavType.IntType },
+                ),
+            ) {
+                ChatRoomScreen(nav, it.arguments?.getInt("pid") ?: 0, it.arguments?.getInt("other") ?: 0)
+            }
+            composable(
+                Route.CHECKOUT,
+                listOf(
+                    navArgument("pid") { type = NavType.IntType },
+                    navArgument("offerId") { type = NavType.IntType; defaultValue = -1 },
+                    navArgument("amount") { type = NavType.LongType; defaultValue = -1L },
+                ),
+            ) {
+                CheckoutScreen(
+                    nav,
+                    it.arguments?.getInt("pid") ?: 0,
+                    it.arguments?.getInt("offerId") ?: -1,
+                    it.arguments?.getLong("amount") ?: -1L,
+                )
+            }
+            composable(Route.ORDER, listOf(navArgument("id") { type = NavType.IntType })) {
+                OrderDetailScreen(nav, it.arguments?.getInt("id") ?: 0)
+            }
+            composable(Route.DISPUTES) { MyDisputesScreen(nav) }
+            composable(Route.ADMIN) { AdminScreen(nav) }
         }
     }
 }
